@@ -345,8 +345,18 @@ export function CliTerminal() {
         setFormStep("nickname");
       } catch (error) {
         const message = error instanceof Error ? error.message : "Connection failed";
-        appendLine(`Connect failed: ${message}`);
-        returnToMenu();
+        if (message.toLowerCase().includes("already connected") && address) {
+          appendLines([
+            "",
+            `Connected: ${truncateAddress(address)}`,
+            "",
+            "Enter a nickname:",
+          ]);
+          setFormStep("nickname");
+        } else {
+          appendLine(`Connect failed: ${message}`);
+          returnToMenu();
+        }
       } finally {
         setIsProcessing(false);
       }
