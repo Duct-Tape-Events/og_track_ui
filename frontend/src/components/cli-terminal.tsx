@@ -1,7 +1,10 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { useAccount, useConnect } from "wagmi";
+import { useAccount, useChainId, useConnect, useReadContract, useSendTransaction, useSwitchChain } from "wagmi";
+import { encodeFunctionData, formatEther } from "viem";
+
+import { CONTRACT_ABI, CONTRACT_ADDRESS, CONTRACT_CHAIN_ID } from "@/lib/contract/config";
 
 type ContactType = "telegram" | "email" | "signal";
 type Mode = "menu" | "form";
@@ -79,6 +82,12 @@ function isValidAddress(value: string): boolean {
   return /^0x[a-fA-F0-9]{40}$/.test(value);
 }
 
+function formatDeposit(wei: bigint): string {
+  if (wei === 0n) return "0 ETH";
+  if (wei < 1_000_000_000_000_000n) return `${wei} wei`;
+  return `${formatEther(wei)} ETH`;
+}
+
 export function CliTerminal() {
   const [lines, setLines] = useState<string[]>(INITIAL_LINES);
   const [mode, setMode] = useState<Mode>("menu");
@@ -94,6 +103,14 @@ export function CliTerminal() {
 
   const { address, isConnected } = useAccount();
   const { connectors, connectAsync } = useConnect();
+  const chainId = useChainId();
+  const { switchChainAsync } = useSwitchChain();
+  const { sendTransactionAsync } = useSendTransaction();
+  const { data: depositAmountWei } = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: CONTRACT_ABI,
+    functionName: "depositAmountWei",
+  });
 
   const appendLine = (line: string) => setLines((c) => [...c, line]);
   const appendLines = (next: string[]) => setLines((c) => [...c, ...next]);
@@ -300,6 +317,7 @@ export function CliTerminal() {
       }
       setDraft((d) => ({ ...d, contactValue: value }));
       setFormStep("confirm");
+      const amountStr = depositAmountWei !== undefined ? formatDeposit(depositAmountWei) : "...";
       appendLines([
         "",
         "Review your application:",
@@ -307,7 +325,7 @@ export function CliTerminal() {
         `  nickname   ${draft.nickname}`,
         `  contact    ${draft.contactType}: ${value}`,
         "",
-        "Submit? yes / no",
+        `stake ${amountStr} to confirm your application? y/n`,
         "",
       ]);
       return;
@@ -316,13 +334,46 @@ export function CliTerminal() {
     if (formStep === "confirm") {
       const v = value.toLowerCase();
       if (v === "no" || v === "n") { appendLine("Application canceled."); returnToMenu(); return; }
-      if (v !== "yes" && v !== "y") { appendLine("Please type yes or no."); return; }
-
-      if (!address) { appendLine("Wallet disconnected. Please restart the application."); returnToMenu(); return; }
+      if (v !== "yes" && v !== "y") { appendLine("Please type y or n."); return; }
+      if (!address) { appendLine("Wallet disconnected. Please restart."); returnToMenu(); return; }
 
       setIsProcessing(true);
       try {
-        const response = await fetch("/api/application", {
+        // 1. Fetch Merkle proof + check eligibility
+        appendLine("Checking eligibility...");
+        const proofRes = await fetch(`/api/merkle/proof/${address}`);
+        const proofData = (await proofRes.json()) as {
+          eligible: boolean;
+          proof: `0x${string}`[];
+          alreadySignedUp: boolean;
+          depositAmountWei: string;
+          error?: string;
+        };
+
+        if (!proofRes.ok) throw new Error(proofData.error ?? "Failed to fetch proof");
+        if (proofData.alreadySignedUp) { appendLine("Already signed up on-chain."); returnToMenu(); return; }
+        if (!proofData.eligible) { appendLines(["", "Not eligible — address not in the OG snapshot.", ""]); returnToMenu(); return; }
+
+        const stakeAmount = BigInt(proofData.depositAmountWei);
+
+        // 2. Switch chain if needed
+        if (chainId !== CONTRACT_CHAIN_ID) {
+          appendLine("Switching to Sepolia...");
+          await switchChainAsync({ chainId: CONTRACT_CHAIN_ID });
+        }
+
+        // 3. Send transaction
+        appendLine("Confirm the transaction in your wallet.");
+        const txHash = await sendTransactionAsync({
+          to: CONTRACT_ADDRESS,
+          value: stakeAmount,
+          data: encodeFunctionData({ abi: CONTRACT_ABI, functionName: "signup", args: [proofData.proof] }),
+        });
+
+        appendLines([`Transaction submitted: ${txHash}`, `Track: https://sepolia.etherscan.io/tx/${txHash}`]);
+
+        // 4. Save application — only on successful transaction
+        const saveRes = await fetch("/api/application", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -332,13 +383,19 @@ export function CliTerminal() {
             contactValue: draft.contactValue,
           }),
         });
+        const savePayload = (await saveRes.json()) as { error?: string };
+        if (!saveRes.ok) throw new Error(savePayload.error ?? "Failed to save application");
 
-        const payload = (await response.json()) as { error?: string };
-        if (!response.ok) throw new Error(payload.error ?? "Failed to save application");
+        // 5. Store tx hash
+        await fetch("/api/transaction/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ walletAddress: address, txHash }),
+        });
 
-        appendLines(["", "✓ Application saved. Welcome to the OGs.", ""]);
+        appendLines(["", "✓ Staked and saved. Welcome to the OGs.", ""]);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to save application";
+        const message = error instanceof Error ? error.message : "Something went wrong";
         appendLine(`Error: ${message}`);
       } finally {
         setIsProcessing(false);
@@ -459,7 +516,7 @@ export function CliTerminal() {
                 className="w-full bg-transparent text-[#D5FFD5] outline-none placeholder:text-[#2B5D2B] disabled:opacity-40"
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
-                placeholder={isProcessing ? "processing..." : "type response or `cancel`..."}
+                placeholder={isProcessing ? "processing..." : "press 'escape' to return"}
                 disabled={isProcessing}
                 autoComplete="off"
               />

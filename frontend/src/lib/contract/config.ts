@@ -1,7 +1,9 @@
 import type { Abi } from "viem";
 
 export const CONTRACT_CHAIN_ID = 11155111; // Sepolia
-export const CONTRACT_ADDRESS = "0xb51d799b94c3dc9119bc6ac072cfabe037126824" as `0x${string}`;
+export const CONTRACT_ADDRESS = (
+  process.env.NEXT_PUBLIC_CONTRACT_ADDRESS ?? "0xb51d799b94c3dc9119bc6ac072cfabe037126824"
+) as `0x${string}`;
 
 // Minimal ABI — only the functions used by the frontend
 export const CONTRACT_ABI = [
