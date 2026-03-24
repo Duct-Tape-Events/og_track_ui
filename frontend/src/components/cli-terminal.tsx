@@ -1,16 +1,16 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { useAccount, useConnect } from "wagmi";
 
 type ContactType = "telegram" | "email" | "signal";
 type Mode = "menu" | "form";
 type Flow = "apply" | "view";
-type ApplyStep = "walletAddress" | "nickname" | "contactType" | "contactValue" | "confirm";
+type ApplyStep = "connectWallet" | "nickname" | "contactType" | "contactValue" | "confirm";
 type ViewStep = "walletAddress";
 type FormStep = ApplyStep | ViewStep;
 
 type ApplyDraft = {
-  walletAddress: string;
   nickname: string;
   contactType: ContactType | null;
   contactValue: string;
@@ -56,15 +56,17 @@ const INITIAL_LINES = [
   "",
 ];
 
+const APPLY_STEPS: ApplyStep[] = ["connectWallet", "nickname", "contactType", "contactValue", "confirm"];
+const CONTACT_TYPES: ContactType[] = ["telegram", "email", "signal"];
+
+const EMPTY_DRAFT: ApplyDraft = { nickname: "", contactType: null, contactValue: "" };
+
 function truncateAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
+  return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
 function validateContact(type: ContactType, value: string): boolean {
@@ -77,24 +79,21 @@ function isValidAddress(value: string): boolean {
   return /^0x[a-fA-F0-9]{40}$/.test(value);
 }
 
-const EMPTY_DRAFT: ApplyDraft = {
-  walletAddress: "",
-  nickname: "",
-  contactType: null,
-  contactValue: "",
-};
-
 export function CliTerminal() {
   const [lines, setLines] = useState<string[]>(INITIAL_LINES);
   const [mode, setMode] = useState<Mode>("menu");
   const [menuIndex, setMenuIndex] = useState(0);
   const [flow, setFlow] = useState<Flow | null>(null);
-  const [formStep, setFormStep] = useState<FormStep>("walletAddress");
+  const [formStep, setFormStep] = useState<FormStep>("connectWallet");
   const [draft, setDraft] = useState<ApplyDraft>(EMPTY_DRAFT);
   const [inputValue, setInputValue] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [contactTypeIndex, setContactTypeIndex] = useState(0);
   const outputRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const { address, isConnected } = useAccount();
+  const { connectors, connectAsync } = useConnect();
 
   const appendLine = (line: string) => setLines((c) => [...c, line]);
   const appendLines = (next: string[]) => setLines((c) => [...c, ...next]);
@@ -106,17 +105,58 @@ export function CliTerminal() {
   }, [lines]);
 
   useEffect(() => {
-    if (mode === "form") {
-      inputRef.current?.focus();
-    }
+    if (mode === "form") inputRef.current?.focus();
   }, [mode, formStep]);
 
-  const returnToMenu = () => {
+  const returnToMenu = useCallback(() => {
     setMode("menu");
     setFlow(null);
     setDraft(EMPTY_DRAFT);
     setInputValue("");
-  };
+  }, []);
+
+  // ── Escape: go back one level ─────────────────────────────────────────────
+
+  const goBack = useCallback(() => {
+    setInputValue("");
+
+    if (flow === "view" || formStep === "connectWallet") {
+      returnToMenu();
+      return;
+    }
+
+    const prevStep = APPLY_STEPS[APPLY_STEPS.indexOf(formStep as ApplyStep) - 1];
+    setFormStep(prevStep);
+
+    if (prevStep === "connectWallet") {
+      setDraft((d) => ({ ...d, nickname: "" }));
+      appendLine("Connect wallet? y/n");
+    } else if (prevStep === "nickname") {
+      setDraft((d) => ({ ...d, contactType: null }));
+      appendLines(["", "Enter a nickname:"]);
+    } else if (prevStep === "contactType") {
+      setDraft((d) => ({ ...d, contactValue: "" }));
+      setContactTypeIndex(draft.contactType ? CONTACT_TYPES.indexOf(draft.contactType) : 0);
+      appendLines(["", "Choose a contact method:"]);
+    } else if (prevStep === "contactValue") {
+      setDraft((d) => ({ ...d, contactValue: "" }));
+      const hint =
+        draft.contactType === "telegram" ? "(e.g. @username)" :
+        draft.contactType === "email"    ? "(e.g. you@example.com)" :
+                                           "(e.g. +1234567890)";
+      appendLines(["", `Enter your ${draft.contactType} handle ${hint}:`]);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flow, formStep, draft.contactType, returnToMenu]);
+
+  useEffect(() => {
+    if (mode !== "form") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { e.preventDefault(); goBack(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mode, goBack]);
 
   // ── Menu keyboard navigation ──────────────────────────────────────────────
 
@@ -133,9 +173,21 @@ export function CliTerminal() {
       if (selected === "apply for og hackathon") {
         setDraft(EMPTY_DRAFT);
         setFlow("apply");
-        setFormStep("walletAddress");
         setMode("form");
-        appendLines(["", "Starting application. Type `cancel` at any time to abort.", "", "Enter your wallet address:"]);
+
+        if (isConnected && address) {
+          // Already connected — skip straight to nickname
+          setFormStep("nickname");
+          appendLines([
+            "",
+            `Wallet connected: ${truncateAddress(address)}`,
+            "",
+            "Enter a nickname:",
+          ]);
+        } else {
+          setFormStep("connectWallet");
+          appendLines(["", "Connect wallet? y/n"]);
+        }
         return;
       }
 
@@ -146,12 +198,11 @@ export function CliTerminal() {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    [isConnected, address],
   );
 
   useEffect(() => {
     if (mode !== "menu") return;
-
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "ArrowUp") {
         e.preventDefault();
@@ -164,22 +215,68 @@ export function CliTerminal() {
         handleMenuSelect(menuIndex);
       }
     };
-
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [mode, menuIndex, handleMenuSelect]);
 
+  // ── Contact type selection (arrow keys) ──────────────────────────────────
+
+  useEffect(() => {
+    if (mode !== "form" || formStep !== "contactType") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setContactTypeIndex((i) => (i - 1 + CONTACT_TYPES.length) % CONTACT_TYPES.length);
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setContactTypeIndex((i) => (i + 1) % CONTACT_TYPES.length);
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        const ct = CONTACT_TYPES[contactTypeIndex];
+        const hint =
+          ct === "telegram" ? "(e.g. @username)" :
+          ct === "email"    ? "(e.g. you@example.com)" :
+                              "(e.g. +1234567890)";
+        appendLine(`> ${ct}`);
+        setDraft((d) => ({ ...d, contactType: ct }));
+        setFormStep("contactValue");
+        setLines((l) => [...l, "", `Enter your ${ct} handle ${hint}:`]);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mode, formStep, contactTypeIndex]);
+
   // ── Apply form steps ──────────────────────────────────────────────────────
 
   const handleApplyStep = async (value: string) => {
-    if (formStep === "walletAddress") {
-      if (!isValidAddress(value)) {
-        appendLine("Invalid address. Must be a 0x-prefixed Ethereum address.");
+    if (formStep === "connectWallet") {
+      const v = value.toLowerCase();
+      if (v === "n" || v === "no") { returnToMenu(); return; }
+      if (v !== "y" && v !== "yes") { appendLine("Please type y or n."); return; }
+
+      if (!connectors.length) {
+        appendLine("No wallet found. Make sure a browser wallet extension is installed.");
         return;
       }
-      setDraft((d) => ({ ...d, walletAddress: value }));
-      setFormStep("nickname");
-      appendLines(["", "Enter a nickname:"]);
+
+      setIsProcessing(true);
+      try {
+        const result = await connectAsync({ connector: connectors[0] });
+        appendLines([
+          "",
+          `Connected: ${truncateAddress(result.accounts[0])}`,
+          "",
+          "Enter a nickname:",
+        ]);
+        setFormStep("nickname");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Connection failed";
+        appendLine(`Connect failed: ${message}`);
+        returnToMenu();
+      } finally {
+        setIsProcessing(false);
+      }
       return;
     }
 
@@ -189,24 +286,9 @@ export function CliTerminal() {
         return;
       }
       setDraft((d) => ({ ...d, nickname: value }));
+      setContactTypeIndex(0);
       setFormStep("contactType");
-      appendLines(["", "Choose a contact method:", "  telegram | email | signal", ""]);
-      return;
-    }
-
-    if (formStep === "contactType") {
-      const ct = value.toLowerCase() as ContactType;
-      if (!["telegram", "email", "signal"].includes(ct)) {
-        appendLine("Please enter: telegram, email, or signal");
-        return;
-      }
-      setDraft((d) => ({ ...d, contactType: ct }));
-      setFormStep("contactValue");
-      const hint =
-        ct === "telegram" ? "(e.g. @username)" :
-        ct === "email"    ? "(e.g. you@example.com)" :
-                            "(e.g. +1234567890)";
-      appendLines(["", `Enter your ${ct} handle ${hint}:`]);
+      appendLines(["", "Choose a contact method:"]);
       return;
     }
 
@@ -221,7 +303,7 @@ export function CliTerminal() {
       appendLines([
         "",
         "Review your application:",
-        `  wallet     ${truncateAddress(draft.walletAddress)}`,
+        `  wallet     ${address ? truncateAddress(address) : "unknown"}`,
         `  nickname   ${draft.nickname}`,
         `  contact    ${draft.contactType}: ${value}`,
         "",
@@ -233,8 +315,10 @@ export function CliTerminal() {
 
     if (formStep === "confirm") {
       const v = value.toLowerCase();
-      if (v === "no" || v === "n") { returnToMenu(); appendLine("Application canceled."); return; }
+      if (v === "no" || v === "n") { appendLine("Application canceled."); returnToMenu(); return; }
       if (v !== "yes" && v !== "y") { appendLine("Please type yes or no."); return; }
+
+      if (!address) { appendLine("Wallet disconnected. Please restart the application."); returnToMenu(); return; }
 
       setIsProcessing(true);
       try {
@@ -242,7 +326,7 @@ export function CliTerminal() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            walletAddress: draft.walletAddress,
+            walletAddress: address,
             nickname: draft.nickname,
             contactType: draft.contactType,
             contactValue: draft.contactValue,
@@ -267,43 +351,41 @@ export function CliTerminal() {
   // ── View application step ─────────────────────────────────────────────────
 
   const handleViewStep = async (value: string) => {
-    if (formStep === "walletAddress") {
-      if (!isValidAddress(value)) {
-        appendLine("Invalid address. Must be a 0x-prefixed Ethereum address.");
-        return;
+    if (formStep !== "walletAddress") return;
+    if (!isValidAddress(value)) {
+      appendLine("Invalid address. Must be a 0x-prefixed Ethereum address.");
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      const response = await fetch(`/api/application/${value}`);
+      const payload = (await response.json()) as { error?: string; application?: SavedApplication };
+
+      if (!response.ok || !payload.application) {
+        throw new Error(payload.error ?? "No application found for this address.");
       }
 
-      setIsProcessing(true);
-      try {
-        const response = await fetch(`/api/application/${value}`);
-        const payload = (await response.json()) as { error?: string; application?: SavedApplication };
-
-        if (!response.ok || !payload.application) {
-          throw new Error(payload.error ?? "No application found for this address.");
-        }
-
-        const r = payload.application;
-        appendLines([
-          "",
-          "Application found:",
-          `  nickname     ${r.nickname}`,
-          `  contact      ${r.contactType}: ${r.contactValueMasked}`,
-          `  status       ${r.status}`,
-          ...(r.txHash ? [`  tx           https://sepolia.etherscan.io/tx/${r.txHash}`] : []),
-          `  submitted    ${formatDate(r.createdAt)}`,
-          "",
-        ]);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Lookup failed";
-        appendLine(message);
-      } finally {
-        setIsProcessing(false);
-        returnToMenu();
-      }
+      const r = payload.application;
+      appendLines([
+        "",
+        "Application found:",
+        `  nickname     ${r.nickname}`,
+        `  contact      ${r.contactType}: ${r.contactValueMasked}`,
+        `  status       ${r.status}`,
+        ...(r.txHash ? [`  tx           https://sepolia.etherscan.io/tx/${r.txHash}`] : []),
+        `  submitted    ${formatDate(r.createdAt)}`,
+        "",
+      ]);
+    } catch (error) {
+      appendLine(error instanceof Error ? error.message : "Lookup failed");
+    } finally {
+      setIsProcessing(false);
+      returnToMenu();
     }
   };
 
-  // ── Form submit handler ───────────────────────────────────────────────────
+  // ── Form submit ───────────────────────────────────────────────────────────
 
   const handleFormSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -313,15 +395,12 @@ export function CliTerminal() {
     setInputValue("");
 
     if (value.toLowerCase() === "cancel") {
-      appendLine("Application canceled.");
+      appendLine("Canceled.");
       returnToMenu();
       return;
     }
 
-    if (!value) {
-      appendLine("Input required. Type `cancel` to abort.");
-      return;
-    }
+    if (!value) return;
 
     appendLine(`> ${value}`);
 
@@ -353,17 +432,25 @@ export function CliTerminal() {
           <nav className="border-t border-[#2B5D2B] px-5 py-4">
             <p className="mb-2 text-xs text-[#5B985B]">↑ ↓ navigate · enter select</p>
             {MENU_ITEMS.map((item, i) => (
-              <div
-                key={item}
-                className={`py-0.5 ${i === menuIndex ? "text-[#D5FFD5]" : "text-[#5B985B]"}`}
-              >
+              <div key={item} className={`py-0.5 ${i === menuIndex ? "text-[#D5FFD5]" : "text-[#5B985B]"}`}>
                 {i === menuIndex ? "▶ " : "  "}{item}
               </div>
             ))}
           </nav>
         )}
 
-        {mode === "form" && (
+        {mode === "form" && formStep === "contactType" && (
+          <nav className="border-t border-[#2B5D2B] px-5 py-4">
+            <p className="mb-2 text-xs text-[#5B985B]">↑ ↓ navigate · enter select · esc back</p>
+            {CONTACT_TYPES.map((ct, i) => (
+              <div key={ct} className={`py-0.5 ${i === contactTypeIndex ? "text-[#D5FFD5]" : "text-[#5B985B]"}`}>
+                {i === contactTypeIndex ? "▶ " : "  "}{ct}
+              </div>
+            ))}
+          </nav>
+        )}
+
+        {mode === "form" && formStep !== "contactType" && (
           <footer className="border-t border-[#2B5D2B] px-4 py-3">
             <form onSubmit={handleFormSubmit} className="flex items-center gap-2">
               <span className="text-[#5B985B]">›</span>
