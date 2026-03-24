@@ -109,6 +109,13 @@ export function CliTerminal() {
   const { disconnectAsync } = useDisconnect();
   const chainId = useChainId();
 
+  // ── Auto-switch to correct network on connect ─────────────────────────────
+
+  useEffect(() => {
+    if (!isConnected || chainId === CONTRACT_CHAIN_ID) return;
+    switchChainAsync({ chainId: CONTRACT_CHAIN_ID }).catch(() => {});
+  }, [isConnected, chainId, switchChainAsync]);
+
   // ── Fetch application for connected wallet ────────────────────────────────
 
   useEffect(() => {
