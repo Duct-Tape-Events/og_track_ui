@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { useAccount, useChainId, useConnect, useReadContract, useSendTransaction, useSwitchChain } from "wagmi";
+import { useAccount, useChainId, useConnect, useDisconnect, useReadContract, useSendTransaction, useSwitchChain } from "wagmi";
 import { encodeFunctionData, formatEther } from "viem";
 
 import { CONTRACT_ABI, CONTRACT_ADDRESS, CONTRACT_CHAIN_ID } from "@/lib/contract/config";
@@ -30,7 +30,9 @@ type SavedApplication = {
   updatedAt: string;
 };
 
-const MENU_ITEMS = ["read manifesto", "apply for og hackathon", "attend ETHPrague 2026"] as const;
+const BASE_MENU_ITEMS = ["read manifesto", "apply for og hackathon", "attend ETHPrague 2026"] as const;
+type BaseMenuItem = (typeof BASE_MENU_ITEMS)[number];
+type MenuItem = BaseMenuItem | "disconnect" | "view my application";
 
 const MANIFESTO_LINES = [
   "╔══════════════════════════════════════╗",
@@ -98,12 +100,38 @@ export function CliTerminal() {
   const [inputValue, setInputValue] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [contactTypeIndex, setContactTypeIndex] = useState(0);
+  const [userApplication, setUserApplication] = useState<SavedApplication | null>(null);
   const outputRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { address, isConnected } = useAccount();
   const { connectors, connectAsync } = useConnect();
+  const { disconnectAsync } = useDisconnect();
   const chainId = useChainId();
+
+  // ── Fetch application for connected wallet ────────────────────────────────
+
+  useEffect(() => {
+    if (!address) { setUserApplication(null); return; }
+    fetch(`/api/application/${address}`)
+      .then((res) => res.json())
+      .then((data: { application?: SavedApplication }) => setUserApplication(data.application ?? null))
+      .catch(() => setUserApplication(null));
+  }, [address]);
+
+  const hasApplied = userApplication !== null;
+
+  const menuItems: MenuItem[] = [
+    "read manifesto",
+    hasApplied ? "view my application" : "apply for og hackathon",
+    "attend ETHPrague 2026",
+    ...(isConnected ? (["disconnect"] as const) : []),
+  ];
+
+  // Clamp menuIndex when items shrink (e.g. after disconnect removes the last item)
+  useEffect(() => {
+    setMenuIndex((i) => Math.min(i, menuItems.length - 1));
+  }, [menuItems.length]);
   const { switchChainAsync } = useSwitchChain();
   const { sendTransactionAsync } = useSendTransaction();
   const { data: depositAmountWei } = useReadContract({
@@ -179,7 +207,7 @@ export function CliTerminal() {
 
   const handleMenuSelect = useCallback(
     async (index: number) => {
-      const selected = MENU_ITEMS[index];
+      const selected = menuItems[index];
       appendLine(`> ${selected}`);
 
       if (selected === "read manifesto") {
@@ -208,14 +236,42 @@ export function CliTerminal() {
         return;
       }
 
+      if (selected === "view my application") {
+        if (!userApplication) return;
+        const r = userApplication;
+        appendLines([
+          "",
+          "Your application:",
+          `  wallet     ${truncateAddress(r.walletAddress)}`,
+          `  nickname   ${r.nickname}`,
+          `  contact    ${r.contactType}: ${r.contactValueMasked}`,
+          `  status     ${r.status}`,
+          ...(r.txHash ? [`  tx         https://sepolia.etherscan.io/tx/${r.txHash}`] : []),
+          `  submitted  ${formatDate(r.createdAt)}`,
+          "",
+        ]);
+        return;
+      }
+
       if (selected === "attend ETHPrague 2026") {
         appendLine("Opening ETHPrague...");
         window.open("https://ethprague.com/", "_blank", "noopener,noreferrer");
         return;
       }
+
+      if (selected === "disconnect") {
+        try {
+          await disconnectAsync();
+          appendLines(["", "Wallet disconnected.", ""]);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Disconnect failed";
+          appendLine(`Disconnect failed: ${message}`);
+        }
+        return;
+      }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isConnected, address],
+    [menuItems, isConnected, address, disconnectAsync, userApplication],
   );
 
   useEffect(() => {
@@ -223,10 +279,10 @@ export function CliTerminal() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "ArrowUp") {
         e.preventDefault();
-        setMenuIndex((i) => (i - 1 + MENU_ITEMS.length) % MENU_ITEMS.length);
+        setMenuIndex((i) => (i - 1 + menuItems.length) % menuItems.length);
       } else if (e.key === "ArrowDown") {
         e.preventDefault();
-        setMenuIndex((i) => (i + 1) % MENU_ITEMS.length);
+        setMenuIndex((i) => (i + 1) % menuItems.length);
       } else if (e.key === "Enter") {
         e.preventDefault();
         handleMenuSelect(menuIndex);
@@ -234,7 +290,7 @@ export function CliTerminal() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [mode, menuIndex, handleMenuSelect]);
+  }, [mode, menuIndex, menuItems, handleMenuSelect]);
 
   // ── Contact type selection (arrow keys) ──────────────────────────────────
 
@@ -393,6 +449,10 @@ export function CliTerminal() {
           body: JSON.stringify({ walletAddress: address, txHash }),
         });
 
+        // 6. Refresh local application state
+        const refreshed = await fetch(`/api/application/${address}`).then((r) => r.json()) as { application?: SavedApplication };
+        setUserApplication(refreshed.application ?? null);
+
         appendLines(["", "✓ Staked and saved. Welcome to the OGs.", ""]);
       } catch (error) {
         const message = error instanceof Error ? error.message : "Something went wrong";
@@ -488,7 +548,7 @@ export function CliTerminal() {
         {mode === "menu" && (
           <nav className="border-t border-[#2B5D2B] px-5 py-4">
             <p className="mb-2 text-xs text-[#5B985B]">↑ ↓ navigate · enter select</p>
-            {MENU_ITEMS.map((item, i) => (
+            {menuItems.map((item, i) => (
               <div key={item} className={`py-0.5 ${i === menuIndex ? "text-[#D5FFD5]" : "text-[#5B985B]"}`}>
                 {i === menuIndex ? "▶ " : "  "}{item}
               </div>
