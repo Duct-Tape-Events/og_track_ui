@@ -108,6 +108,13 @@ export function CliTerminal() {
   const { connectors, connectAsync } = useConnect();
   const { disconnectAsync } = useDisconnect();
   const chainId = useChainId();
+  const { switchChainAsync } = useSwitchChain();
+  const { sendTransactionAsync } = useSendTransaction();
+  const { data: depositAmountWei } = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: CONTRACT_ABI,
+    functionName: "depositAmountWei",
+  });
 
   // ── Auto-switch to correct network on connect ─────────────────────────────
 
@@ -139,13 +146,6 @@ export function CliTerminal() {
   useEffect(() => {
     setMenuIndex((i) => Math.min(i, menuItems.length - 1));
   }, [menuItems.length]);
-  const { switchChainAsync } = useSwitchChain();
-  const { sendTransactionAsync } = useSendTransaction();
-  const { data: depositAmountWei } = useReadContract({
-    address: CONTRACT_ADDRESS,
-    abi: CONTRACT_ABI,
-    functionName: "depositAmountWei",
-  });
 
   const appendLine = (line: string) => setLines((c) => [...c, line]);
   const appendLines = (next: string[]) => setLines((c) => [...c, ...next]);
