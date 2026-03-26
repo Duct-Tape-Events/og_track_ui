@@ -1,6 +1,8 @@
 import type { Abi } from "viem";
 
-export const CONTRACT_CHAIN_ID = 11155111; // Sepolia
+const isProduction = process.env.NEXT_PUBLIC_ENVIRONMENT === "production";
+
+export const CONTRACT_CHAIN_ID = isProduction ? 1 : 11155111; // mainnet : Sepolia
 export const CONTRACT_ADDRESS = (
   process.env.NEXT_PUBLIC_CONTRACT_ADDRESS ?? "0xd43965821f8d40dd449760aA39a934Ff0b87dba7"
 ) as `0x${string}`;

@@ -103,7 +103,7 @@ export function CliTerminal() {
   const outputRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, chain } = useAccount();
   const { connectors, connectAsync } = useConnect();
   const { disconnectAsync } = useDisconnect();
   const chainId = useChainId();
@@ -342,22 +342,31 @@ export function CliTerminal() {
       setIsProcessing(true);
       try {
         const result = await connectAsync({ connector: connectors[0] });
-        appendLines([
-          "",
-          `Connected: ${truncateAddress(result.accounts[0])}`,
-          "",
-          "Enter a nickname:",
-        ]);
+        appendLine(`Connected: ${truncateAddress(result.accounts[0])}`);
+
+        if (result.chainId !== CONTRACT_CHAIN_ID) {
+          appendLine(`Wrong network (${result.chainId}). Switching to Sepolia...`);
+          await switchChainAsync({ chainId: CONTRACT_CHAIN_ID });
+          appendLine("Switched to Sepolia.");
+        }
+
+        appendLines(["", "Enter a nickname:"]);
         setFormStep("nickname");
       } catch (error) {
         const message = error instanceof Error ? error.message : "Connection failed";
         if (message.toLowerCase().includes("already connected") && address) {
-          appendLines([
-            "",
-            `Connected: ${truncateAddress(address)}`,
-            "",
-            "Enter a nickname:",
-          ]);
+          if (chainId !== CONTRACT_CHAIN_ID) {
+            appendLine(`Wrong network. Switching to Sepolia...`);
+            try {
+              await switchChainAsync({ chainId: CONTRACT_CHAIN_ID });
+              appendLine("Switched to Sepolia.");
+            } catch {
+              appendLine("Could not switch network. Please switch to Sepolia manually and try again.");
+              returnToMenu();
+              return;
+            }
+          }
+          appendLines(["", `Connected: ${truncateAddress(address)}`, "", "Enter a nickname:"]);
           setFormStep("nickname");
         } else {
           appendLine(`Connect failed: ${message}`);
@@ -424,7 +433,7 @@ export function CliTerminal() {
 
         if (!proofRes.ok) throw new Error(proofData.error ?? "Failed to fetch proof");
         if (proofData.alreadySignedUp) { appendLine("Already signed up on-chain."); returnToMenu(); return; }
-        if (!proofData.eligible) { appendLines(["", "Not eligible — address not in the OG snapshot.", ""]); returnToMenu(); return; }
+        if (!proofData.eligible) { appendLines(["", "Not eligible — address had no ETH balance at the snapshot block.", ""]); returnToMenu(); return; }
 
         const stakeAmount = BigInt(proofData.depositAmountWei);
 
@@ -434,9 +443,10 @@ export function CliTerminal() {
           await switchChainAsync({ chainId: CONTRACT_CHAIN_ID });
         }
 
-        // 3. Send transaction
+        // 3. Send transaction — chainId enforced to prevent sending on wrong chain
         appendLine("Confirm the transaction in your wallet.");
         const txHash = await sendTransactionAsync({
+          chainId: CONTRACT_CHAIN_ID,
           to: CONTRACT_ADDRESS,
           value: stakeAmount,
           data: encodeFunctionData({ abi: CONTRACT_ABI, functionName: "signup", args: [proofData.proof] }),
@@ -503,8 +513,13 @@ export function CliTerminal() {
     <div className="flex min-h-screen items-center justify-center bg-[#050505] p-4">
       <main className="flex h-[85vh] w-full max-w-3xl flex-col rounded-md border border-[#2B5D2B] bg-black/90 font-mono text-sm text-[#7CFF7C] shadow-[0_0_30px_rgba(124,255,124,0.12)]">
 
-        <header className="border-b border-[#2B5D2B] px-4 py-2 text-xs text-[#5B985B]">
-          OG's aren't jaded! :: ETHPrague 2026
+        <header className="border-b border-[#2B5D2B] px-4 py-2 text-xs text-[#5B985B] flex justify-between">
+          <span>OG's aren't jaded! :: ETHPrague 2026</span>
+          {isConnected && (
+            <span className={chainId === CONTRACT_CHAIN_ID ? "text-[#5B985B]" : "text-red-500"}>
+              {chain?.name ?? `chain ${chainId}`}{chainId !== CONTRACT_CHAIN_ID ? " ⚠ wrong network" : ""}
+            </span>
+          )}
         </header>
 
         <section
