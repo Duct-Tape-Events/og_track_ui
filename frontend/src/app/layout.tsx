@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "OG's aren't jaded!",
-  description: "CLI-style onboarding and application experience.",
+  title: "OGs aren't jaded!",
+  description: "ETHPrague 2026 Hackathon - OG track",
 };
 
 export default function RootLayout({

@@ -35,7 +35,7 @@ type MenuItem = BaseMenuItem | "disconnect" | "view my application";
 
 const MANIFESTO_LINES = [
   "╔══════════════════════════════════════╗",
-  "║        OG's aren't jaded!           ║",
+  "║        OGs aren't jaded!           ║",
   "╚══════════════════════════════════════╝",
   "",
   "  We came to build.",
@@ -61,7 +61,7 @@ const INITIAL_LINES = [
   "  ██████╔╝╚██████╔╝███████║",
   "  ╚═════╝  ╚═════╝ ╚══════╝",
   "",
-  "  OG's aren't jaded!",
+  "  OGs aren't jaded!",
   "",
 ];
 
@@ -180,7 +180,7 @@ export function CliTerminal() {
 
     if (prevStep === "connectWallet") {
       setDraft((d) => ({ ...d, nickname: "" }));
-      appendLine("Connect wallet? y/n");
+      appendLine("Connect a wallet that was active before block 6942067 (Dec 24th, 2018)? y/n");
     } else if (prevStep === "nickname") {
       setDraft((d) => ({ ...d, contactType: null }));
       appendLines(["", "Enter a nickname:"]);
@@ -255,7 +255,7 @@ export function CliTerminal() {
           appendLines(["", "Enter a nickname:"]);
         } else {
           setFormStep("connectWallet");
-          appendLines(["", "Connect wallet? y/n"]);
+          appendLines(["", "Connect a wallet that was active before block 6942067 (Dec 24th, 2018)? y/n"]);
         }
         return;
       }
@@ -464,7 +464,7 @@ export function CliTerminal() {
 
         if (!proofRes.ok) throw new Error(proofData.error ?? "Failed to fetch proof");
         if (proofData.alreadySignedUp) { appendLine("Already signed up on-chain."); returnToMenu(); return; }
-        if (!proofData.eligible) { appendLines(["", "Not eligible — address had no ETH balance at the snapshot block.", ""]); returnToMenu(); return; }
+        if (!proofData.eligible) { appendLines(["", "Not eligible — address had no ETH balance at snapshot.", ""]); returnToMenu(); return; }
 
         const stakeAmount = BigInt(proofData.depositAmountWei);
 
@@ -551,7 +551,7 @@ export function CliTerminal() {
       <main className="flex h-[85vh] w-full max-w-3xl flex-col rounded-md border border-[#2B5D2B] bg-black/90 font-mono text-sm text-[#7CFF7C] shadow-[0_0_30px_rgba(124,255,124,0.12)]">
 
         <header className="border-b border-[#2B5D2B] px-4 py-2 text-xs text-[#5B985B] flex justify-between">
-          <span>OG's aren't jaded! :: ETHPrague 2026</span>
+          <span>OGs aren't jaded! :: ETHPrague 2026</span>
           {isConnected && process.env.NEXT_PUBLIC_ENVIRONMENT !== "production" && (
             <span className={chainId === CONTRACT_CHAIN_ID ? "text-[#5B985B]" : "text-red-500"}>
               {chain?.name ?? (chainId === 1 ? "Mainnet" : chainId === 11155111 ? "Sepolia" : `Chain ${chainId}`)}{chainId !== CONTRACT_CHAIN_ID ? " ⚠ wrong network" : ""}
