@@ -38,12 +38,17 @@ const MANIFESTO_LINES = [
   "║        OG's aren't jaded!           ║",
   "╚══════════════════════════════════════╝",
   "",
-  "  [Manifesto placeholder — coming soon]",
-  "",
+  "  We came to build.",
+  "  We kept showing up.",
+  "  We put skin in the game.",
+  "  We ship in public.",
+  "  We open source the hard parts.",
   "  We build with conviction, curiosity, and care.",
-  "  We value craft over hype and signal over noise.",
-  "  We ship work that is legible, useful, and open.",
-  "  We stay optimistic because builders define the future.",
+  "  Craft > clout. Signal > noise.",
+  "  We build for pride, not paydays.",
+  "  We don't chase trends, we outlast them.",
+  "  We stay optimistic; builders define the future.",
+  "  Future's built, not bought.",
   "",
 ];
 
@@ -566,9 +571,13 @@ export function CliTerminal() {
 
         {mode === "menu" && (
           <nav className="border-t border-[#2B5D2B] px-5 py-4">
-            <p className="mb-2 text-xs text-[#5B985B]">↑ ↓ navigate · enter select</p>
+            <p className="mb-2 text-xs text-[#5B985B]">tap · ↑ ↓ navigate · enter select</p>
             {menuItems.map((item, i) => (
-              <div key={item} className={`py-0.5 ${i === menuIndex ? "text-[#D5FFD5]" : "text-[#5B985B]"}`}>
+              <div
+                key={item}
+                className={`cursor-pointer py-0.5 ${i === menuIndex ? "text-[#D5FFD5]" : "text-[#5B985B]"}`}
+                onClick={() => { setMenuIndex(i); handleMenuSelect(i); }}
+              >
                 {i === menuIndex ? "▶ " : "  "}{item}
               </div>
             ))}
@@ -577,9 +586,20 @@ export function CliTerminal() {
 
         {mode === "form" && formStep === "contactType" && (
           <nav className="border-t border-[#2B5D2B] px-5 py-4">
-            <p className="mb-2 text-xs text-[#5B985B]">↑ ↓ navigate · enter select · esc back</p>
+            <p className="mb-2 text-xs text-[#5B985B]">tap · ↑ ↓ navigate · enter select · esc back</p>
             {CONTACT_TYPES.map((ct, i) => (
-              <div key={ct} className={`py-0.5 ${i === contactTypeIndex ? "text-[#D5FFD5]" : "text-[#5B985B]"}`}>
+              <div
+                key={ct}
+                className={`cursor-pointer py-0.5 ${i === contactTypeIndex ? "text-[#D5FFD5]" : "text-[#5B985B]"}`}
+                onClick={() => {
+                  setContactTypeIndex(i);
+                  const hint = ct === "telegram" ? "(e.g. @username)" : ct === "email" ? "(e.g. you@example.com)" : "(e.g. +1234567890)";
+                  appendLine(`> ${ct}`);
+                  setDraft((d) => ({ ...d, contactType: ct }));
+                  setLines((l) => [...l, "", `Enter your ${ct} handle ${hint}:`]);
+                  setFormStep("contactValue");
+                }}
+              >
                 {i === contactTypeIndex ? "▶ " : "  "}{ct}
               </div>
             ))}
