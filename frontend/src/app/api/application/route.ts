@@ -27,7 +27,12 @@ export async function POST(request: Request) {
 
     const { walletAddress, nickname, contactType, contactValue, txHash } = parsed.data;
 
-    const tx = await publicClient.getTransaction({ hash: txHash as `0x${string}` });
+    let tx;
+    try {
+      tx = await publicClient.getTransaction({ hash: txHash as `0x${string}` });
+    } catch {
+      return NextResponse.json({ error: "Transaction not found — it may still be propagating, please retry in a moment" }, { status: 422 });
+    }
     if (tx.from.toLowerCase() !== walletAddress.toLowerCase()) {
       return NextResponse.json({ error: "Transaction sender does not match wallet address" }, { status: 401 });
     }

@@ -8,10 +8,9 @@ import { CONTRACT_ABI, CONTRACT_ADDRESS, CONTRACT_CHAIN_ID } from "@/lib/contrac
 
 type ContactType = "telegram" | "email" | "signal";
 type Mode = "menu" | "form";
-type Flow = "apply" | "view";
+type Flow = "apply";
 type ApplyStep = "connectWallet" | "nickname" | "contactType" | "contactValue" | "confirm";
-type ViewStep = "walletAddress";
-type FormStep = ApplyStep | ViewStep;
+type FormStep = ApplyStep;
 
 type ApplyDraft = {
   nickname: string;
@@ -172,7 +171,7 @@ export function CliTerminal() {
   const goBack = useCallback(() => {
     setInputValue("");
 
-    if (flow === "view" || formStep === "connectWallet") {
+    if (formStep === "connectWallet") {
       returnToMenu();
       return;
     }
@@ -476,43 +475,6 @@ export function CliTerminal() {
     }
   };
 
-  // ── View application step ─────────────────────────────────────────────────
-
-  const handleViewStep = async (value: string) => {
-    if (formStep !== "walletAddress") return;
-    if (!isValidAddress(value)) {
-      appendLine("Invalid address. Must be a 0x-prefixed Ethereum address.");
-      return;
-    }
-
-    setIsProcessing(true);
-    try {
-      const response = await fetch(`/api/application/${value}`);
-      const payload = (await response.json()) as { error?: string; application?: SavedApplication };
-
-      if (!response.ok || !payload.application) {
-        throw new Error(payload.error ?? "No application found for this address.");
-      }
-
-      const r = payload.application;
-      appendLines([
-        "",
-        "Application found:",
-        `  nickname     ${r.nickname}`,
-        `  contact      ${r.contactType}: ${r.contactValueMasked}`,
-        `  status       ${r.status}`,
-        ...(r.txHash ? [`  tx           https://sepolia.etherscan.io/tx/${r.txHash}`] : []),
-        `  submitted    ${formatDate(r.createdAt)}`,
-        "",
-      ]);
-    } catch (error) {
-      appendLine(error instanceof Error ? error.message : "Lookup failed");
-    } finally {
-      setIsProcessing(false);
-      returnToMenu();
-    }
-  };
-
   // ── Form submit ───────────────────────────────────────────────────────────
 
   const handleFormSubmit = async (e: FormEvent<HTMLFormElement>) => {
@@ -533,7 +495,6 @@ export function CliTerminal() {
     appendLine(`> ${value}`);
 
     if (flow === "apply") await handleApplyStep(value);
-    if (flow === "view") await handleViewStep(value);
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
