@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { useAccount, useChainId, useConnect, useDisconnect, useReadContract, useSendTransaction, useSignMessage, useSwitchChain } from "wagmi";
+import { useAccount, useChainId, useConnect, useDisconnect, useReadContract, useSendTransaction, useSwitchChain } from "wagmi";
 import { encodeFunctionData, formatEther } from "viem";
 
 import { CONTRACT_ABI, CONTRACT_ADDRESS, CONTRACT_CHAIN_ID } from "@/lib/contract/config";
@@ -110,7 +110,6 @@ export function CliTerminal() {
   const chainId = useChainId();
   const { switchChainAsync } = useSwitchChain();
   const { sendTransactionAsync } = useSendTransaction();
-  const { signMessageAsync } = useSignMessage();
   const { data: depositAmountWei } = useReadContract({
     address: CONTRACT_ADDRESS,
     abi: CONTRACT_ABI,
@@ -413,12 +412,7 @@ export function CliTerminal() {
 
       setIsProcessing(true);
       try {
-        // 1. Sign a message to prove wallet ownership
-        appendLine("Sign the message in your wallet to verify ownership...");
-        const signMessage = `OGs Not Jaded: Submit application\nWallet: ${address.toLowerCase()}`;
-        const signature = await signMessageAsync({ message: signMessage });
-
-        // 2. Fetch Merkle proof + check eligibility
+        // 1. Fetch Merkle proof + check eligibility
         appendLine("Checking eligibility...");
         const proofRes = await fetch(`/api/merkle/proof/${address}`);
         const proofData = (await proofRes.json()) as {
@@ -435,13 +429,13 @@ export function CliTerminal() {
 
         const stakeAmount = BigInt(proofData.depositAmountWei);
 
-        // 3. Switch chain if needed
+        // 2. Switch chain if needed
         if (chainId !== CONTRACT_CHAIN_ID) {
           appendLine("Switching to Sepolia...");
           await switchChainAsync({ chainId: CONTRACT_CHAIN_ID });
         }
 
-        // 4. Send transaction
+        // 3. Send transaction
         appendLine("Confirm the transaction in your wallet.");
         const txHash = await sendTransactionAsync({
           to: CONTRACT_ADDRESS,
@@ -451,7 +445,7 @@ export function CliTerminal() {
 
         appendLines([`Transaction submitted: ${txHash}`, `Track: https://sepolia.etherscan.io/tx/${txHash}`]);
 
-        // 5. Save application — only on successful transaction
+        // 4. Save application — server verifies tx.from matches wallet address
         const saveRes = await fetch("/api/application", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -460,20 +454,13 @@ export function CliTerminal() {
             nickname: draft.nickname,
             contactType: draft.contactType,
             contactValue: draft.contactValue,
-            signature,
+            txHash,
           }),
         });
         const savePayload = (await saveRes.json()) as { error?: string };
         if (!saveRes.ok) throw new Error(savePayload.error ?? "Failed to save application");
 
-        // 6. Store tx hash
-        await fetch("/api/transaction/confirm", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ walletAddress: address, txHash, signature }),
-        });
-
-        // 6. Refresh local application state
+        // 5. Refresh local application state
         const refreshed = await fetch(`/api/application/${address}`).then((r) => r.json()) as { application?: SavedApplication };
         setUserApplication(refreshed.application ?? null);
 

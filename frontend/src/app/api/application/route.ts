@@ -1,16 +1,13 @@
 import { NextResponse } from "next/server";
 import { ContactType } from "@prisma/client";
-import { verifyMessage } from "viem";
 
 import { encryptContact, maskContact } from "@/lib/server/encryption";
 import { prisma } from "@/lib/server/prisma";
+import { publicClient } from "@/lib/server/publicClient";
 import { checkRateLimit, getIp } from "@/lib/server/ratelimit";
 import { createApplicationSchema } from "@/lib/server/validation";
 
 export const runtime = "nodejs";
-
-export const APPLICATION_SIGN_MESSAGE = (walletAddress: string) =>
-  `OGs Not Jaded: Submit application\nWallet: ${walletAddress.toLowerCase()}`;
 
 export async function POST(request: Request) {
   if (!checkRateLimit(getIp(request), 10, 60_000)) {
@@ -28,15 +25,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const { walletAddress, nickname, contactType, contactValue, signature } = parsed.data;
+    const { walletAddress, nickname, contactType, contactValue, txHash } = parsed.data;
 
-    const valid = await verifyMessage({
-      address: walletAddress as `0x${string}`,
-      message: APPLICATION_SIGN_MESSAGE(walletAddress),
-      signature: signature as `0x${string}`,
-    });
-    if (!valid) {
-      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+    const tx = await publicClient.getTransaction({ hash: txHash as `0x${string}` });
+    if (tx.from.toLowerCase() !== walletAddress.toLowerCase()) {
+      return NextResponse.json({ error: "Transaction sender does not match wallet address" }, { status: 401 });
     }
 
     const encrypted = encryptContact(contactValue);
@@ -48,16 +41,22 @@ export async function POST(request: Request) {
         nickname,
         contactType: contactType as ContactType,
         contactValueEncrypted: encrypted,
+        txHash,
+        status: "tx_pending",
       },
       update: {
         nickname,
         contactType: contactType as ContactType,
         contactValueEncrypted: encrypted,
+        txHash,
+        status: "tx_pending",
       },
       select: {
         walletAddress: true,
         nickname: true,
         contactType: true,
+        txHash: true,
+        status: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -71,6 +70,8 @@ export async function POST(request: Request) {
           nickname: application.nickname,
           contactType: application.contactType,
           contactValueMasked: maskContact(contactValue),
+          txHash: application.txHash,
+          status: application.status,
           createdAt: application.createdAt,
           updatedAt: application.updatedAt,
         },
