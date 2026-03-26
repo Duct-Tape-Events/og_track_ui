@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { useAccount, useChainId, useConnect, useDisconnect, useReadContract, useSendTransaction, useSwitchChain } from "wagmi";
+import { useAccount, useConnect, useDisconnect, useReadContract, useSendTransaction, useSwitchChain } from "wagmi";
 import { encodeFunctionData, formatEther } from "viem";
 
 import { CONTRACT_ABI, CONTRACT_ADDRESS, CONTRACT_CHAIN_ID } from "@/lib/contract/config";
@@ -103,24 +103,17 @@ export function CliTerminal() {
   const outputRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const { address, isConnected, chain } = useAccount();
+  const { address, isConnected, chain, chainId } = useAccount();
   const { connectors, connectAsync } = useConnect();
   const { disconnectAsync } = useDisconnect();
-  const chainId = useChainId();
   const { switchChainAsync } = useSwitchChain();
   const { sendTransactionAsync } = useSendTransaction();
   const { data: depositAmountWei } = useReadContract({
     address: CONTRACT_ADDRESS,
     abi: CONTRACT_ABI,
     functionName: "depositAmountWei",
+    chainId: CONTRACT_CHAIN_ID,
   });
-
-  // ── Auto-switch to correct network on connect ─────────────────────────────
-
-  useEffect(() => {
-    if (!isConnected || chainId === CONTRACT_CHAIN_ID) return;
-    switchChainAsync({ chainId: CONTRACT_CHAIN_ID }).catch(() => {});
-  }, [isConnected, chainId, switchChainAsync]);
 
   // ── Fetch application for connected wallet ────────────────────────────────
 
@@ -227,14 +220,25 @@ export function CliTerminal() {
         setMode("form");
 
         if (isConnected && address) {
-          // Already connected — skip straight to nickname
+          // Already connected — check chain before proceeding
+          if (chainId !== CONTRACT_CHAIN_ID) {
+            setIsProcessing(true);
+            appendLines(["", `Wallet connected: ${truncateAddress(address)}`, `Wrong network. Switching to Sepolia...`]);
+            try {
+              await switchChainAsync({ chainId: CONTRACT_CHAIN_ID });
+              appendLine("Switched to Sepolia.");
+            } catch {
+              appendLine("Could not switch network. Please switch to Sepolia manually and try again.");
+              returnToMenu();
+              setIsProcessing(false);
+              return;
+            }
+            setIsProcessing(false);
+          } else {
+            appendLine(`Wallet connected: ${truncateAddress(address)}`);
+          }
           setFormStep("nickname");
-          appendLines([
-            "",
-            `Wallet connected: ${truncateAddress(address)}`,
-            "",
-            "Enter a nickname:",
-          ]);
+          appendLines(["", "Enter a nickname:"]);
         } else {
           setFormStep("connectWallet");
           appendLines(["", "Connect wallet? y/n"]);
@@ -276,8 +280,7 @@ export function CliTerminal() {
         return;
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [menuItems, isConnected, address, disconnectAsync, userApplication],
+    [menuItems, isConnected, chainId, address, switchChainAsync, disconnectAsync, userApplication],
   );
 
   useEffect(() => {
@@ -344,12 +347,6 @@ export function CliTerminal() {
         const result = await connectAsync({ connector: connectors[0] });
         appendLine(`Connected: ${truncateAddress(result.accounts[0])}`);
 
-        if (result.chainId !== CONTRACT_CHAIN_ID) {
-          appendLine(`Wrong network (${result.chainId}). Switching to Sepolia...`);
-          await switchChainAsync({ chainId: CONTRACT_CHAIN_ID });
-          appendLine("Switched to Sepolia.");
-        }
-
         appendLines(["", "Enter a nickname:"]);
         setFormStep("nickname");
       } catch (error) {
@@ -368,6 +365,9 @@ export function CliTerminal() {
           }
           appendLines(["", `Connected: ${truncateAddress(address)}`, "", "Enter a nickname:"]);
           setFormStep("nickname");
+        } else if (message.toLowerCase().includes("already pending")) {
+          appendLine("MetaMask has a pending request. Open MetaMask and accept or reject it, then try again.");
+          returnToMenu();
         } else {
           appendLine(`Connect failed: ${message}`);
           returnToMenu();
@@ -437,10 +437,11 @@ export function CliTerminal() {
 
         const stakeAmount = BigInt(proofData.depositAmountWei);
 
-        // 2. Switch chain if needed
+        // 2. Switch to correct chain if needed
         if (chainId !== CONTRACT_CHAIN_ID) {
-          appendLine("Switching to Sepolia...");
+          appendLine("Wrong network. Approve the chain switch in your wallet...");
           await switchChainAsync({ chainId: CONTRACT_CHAIN_ID });
+          appendLine("Switched to Sepolia.");
         }
 
         // 3. Send transaction — chainId enforced to prevent sending on wrong chain
@@ -515,9 +516,9 @@ export function CliTerminal() {
 
         <header className="border-b border-[#2B5D2B] px-4 py-2 text-xs text-[#5B985B] flex justify-between">
           <span>OG's aren't jaded! :: ETHPrague 2026</span>
-          {isConnected && (
+          {isConnected && process.env.NEXT_PUBLIC_ENVIRONMENT !== "production" && (
             <span className={chainId === CONTRACT_CHAIN_ID ? "text-[#5B985B]" : "text-red-500"}>
-              {chain?.name ?? `chain ${chainId}`}{chainId !== CONTRACT_CHAIN_ID ? " ⚠ wrong network" : ""}
+              {chain?.name ?? (chainId === 1 ? "Mainnet" : chainId === 11155111 ? "Sepolia" : `Chain ${chainId}`)}{chainId !== CONTRACT_CHAIN_ID ? " ⚠ wrong network" : ""}
             </span>
           )}
         </header>
