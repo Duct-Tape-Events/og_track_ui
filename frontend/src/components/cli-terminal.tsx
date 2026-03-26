@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { useAccount, useConnect, useDisconnect, useReadContract, useSendTransaction, useSwitchChain } from "wagmi";
+import { useAccount, useConnect, useDisconnect, usePublicClient, useReadContract, useSendTransaction, useSwitchChain } from "wagmi";
 import { encodeFunctionData, formatEther } from "viem";
 
 import { CONTRACT_ABI, CONTRACT_ADDRESS, CONTRACT_CHAIN_ID } from "@/lib/contract/config";
@@ -108,6 +108,7 @@ export function CliTerminal() {
   const { disconnectAsync } = useDisconnect();
   const { switchChainAsync } = useSwitchChain();
   const { sendTransactionAsync } = useSendTransaction();
+  const publicClient = usePublicClient({ chainId: CONTRACT_CHAIN_ID });
   const { data: depositAmountWei } = useReadContract({
     address: CONTRACT_ADDRESS,
     abi: CONTRACT_ABI,
@@ -237,6 +238,14 @@ export function CliTerminal() {
           } else {
             appendLine(`Wallet connected: ${truncateAddress(address)}`);
           }
+          const existingRes = await fetch(`/api/application/${address}`);
+          const existing = (await existingRes.json()) as { application?: SavedApplication };
+          if (existing.application) {
+            setUserApplication(existing.application);
+            appendLines(["", "You've already applied."]);
+            returnToMenu();
+            return;
+          }
           setFormStep("nickname");
           appendLines(["", "Enter a nickname:"]);
         } else {
@@ -347,6 +356,15 @@ export function CliTerminal() {
         const result = await connectAsync({ connector: connectors[0] });
         appendLine(`Connected: ${truncateAddress(result.accounts[0])}`);
 
+        const existingRes = await fetch(`/api/application/${result.accounts[0]}`);
+        const existing = (await existingRes.json()) as { application?: SavedApplication };
+        if (existing.application) {
+          setUserApplication(existing.application);
+          appendLines(["", "You've already applied."]);
+          returnToMenu();
+          return;
+        }
+
         appendLines(["", "Enter a nickname:"]);
         setFormStep("nickname");
       } catch (error) {
@@ -362,6 +380,14 @@ export function CliTerminal() {
               returnToMenu();
               return;
             }
+          }
+          const existingRes = await fetch(`/api/application/${address}`);
+          const existing = (await existingRes.json()) as { application?: SavedApplication };
+          if (existing.application) {
+            setUserApplication(existing.application);
+            appendLines(["", "You've already applied."]);
+            returnToMenu();
+            return;
           }
           appendLines(["", `Connected: ${truncateAddress(address)}`, "", "Enter a nickname:"]);
           setFormStep("nickname");
@@ -455,7 +481,12 @@ export function CliTerminal() {
 
         appendLines([`Transaction submitted: ${txHash}`, `Track: https://sepolia.etherscan.io/tx/${txHash}`]);
 
-        // 4. Save application — server verifies tx.from matches wallet address
+        // 4. Wait for on-chain confirmation
+        appendLine("Waiting for confirmation...");
+        await publicClient!.waitForTransactionReceipt({ hash: txHash });
+        appendLine("Confirmed.");
+
+        // 5. Save application — server verifies tx.from matches wallet address
         const saveRes = await fetch("/api/application", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

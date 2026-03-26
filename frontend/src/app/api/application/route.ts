@@ -47,14 +47,14 @@ export async function POST(request: Request) {
         contactType: contactType as ContactType,
         contactValueEncrypted: encrypted,
         txHash,
-        status: "tx_pending",
+        status: "tx_confirmed",
       },
       update: {
         nickname,
         contactType: contactType as ContactType,
         contactValueEncrypted: encrypted,
         txHash,
-        status: "tx_pending",
+        status: "tx_confirmed",
       },
       select: {
         walletAddress: true,
