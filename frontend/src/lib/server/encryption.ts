@@ -49,7 +49,6 @@ export function decryptContact(payload: string): string {
   return plaintext;
 }
 
-export function maskContact(value: string): string {
-  if (value.length <= 4) return "****";
-  return `${value.slice(0, 2)}***${value.slice(-2)}`;
+export function maskContact(_value: string): string {
+  return "****";
 }

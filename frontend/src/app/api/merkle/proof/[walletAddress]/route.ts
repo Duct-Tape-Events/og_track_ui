@@ -46,7 +46,7 @@ export async function GET(_: Request, context: RouteContext) {
       depositAmountWei: depositAmountWei.toString(),
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown server error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("[GET /api/merkle/proof/:walletAddress]", error);
+    return NextResponse.json({ error: "Failed to generate proof" }, { status: 500 });
   }
 }

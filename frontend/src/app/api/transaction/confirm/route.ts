@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { verifyMessage } from "viem";
 
+import { APPLICATION_SIGN_MESSAGE } from "@/app/api/application/route";
 import { prisma } from "@/lib/server/prisma";
 import { checkRateLimit, getIp } from "@/lib/server/ratelimit";
 import { confirmTxSchema } from "@/lib/server/validation";
@@ -22,7 +24,16 @@ export async function POST(request: Request) {
       );
     }
 
-    const { walletAddress, txHash } = parsed.data;
+    const { walletAddress, txHash, signature } = parsed.data;
+
+    const valid = await verifyMessage({
+      address: walletAddress as `0x${string}`,
+      message: APPLICATION_SIGN_MESSAGE(walletAddress),
+      signature: signature as `0x${string}`,
+    });
+    if (!valid) {
+      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+    }
 
     const application = await prisma.application.findUnique({
       where: { walletAddress: walletAddress.toLowerCase() },
@@ -40,7 +51,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown server error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("[POST /api/transaction/confirm]", error);
+    return NextResponse.json({ error: "Failed to confirm transaction" }, { status: 500 });
   }
 }

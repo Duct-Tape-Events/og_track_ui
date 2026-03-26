@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { ContactType } from "@prisma/client";
+import { verifyMessage } from "viem";
 
 import { encryptContact, maskContact } from "@/lib/server/encryption";
 import { prisma } from "@/lib/server/prisma";
@@ -7,6 +8,9 @@ import { checkRateLimit, getIp } from "@/lib/server/ratelimit";
 import { createApplicationSchema } from "@/lib/server/validation";
 
 export const runtime = "nodejs";
+
+export const APPLICATION_SIGN_MESSAGE = (walletAddress: string) =>
+  `OGs Not Jaded: Submit application\nWallet: ${walletAddress.toLowerCase()}`;
 
 export async function POST(request: Request) {
   if (!checkRateLimit(getIp(request), 10, 60_000)) {
@@ -24,7 +28,17 @@ export async function POST(request: Request) {
       );
     }
 
-    const { walletAddress, nickname, contactType, contactValue } = parsed.data;
+    const { walletAddress, nickname, contactType, contactValue, signature } = parsed.data;
+
+    const valid = await verifyMessage({
+      address: walletAddress as `0x${string}`,
+      message: APPLICATION_SIGN_MESSAGE(walletAddress),
+      signature: signature as `0x${string}`,
+    });
+    if (!valid) {
+      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+    }
+
     const encrypted = encryptContact(contactValue);
 
     const application = await prisma.application.upsert({
@@ -64,7 +78,7 @@ export async function POST(request: Request) {
       { status: 200 },
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown server error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("[POST /api/application]", error);
+    return NextResponse.json({ error: "Failed to save application" }, { status: 500 });
   }
 }

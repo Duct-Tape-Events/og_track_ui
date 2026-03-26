@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
-import { decryptContact, maskContact } from "@/lib/server/encryption";
+import { maskContact } from "@/lib/server/encryption";
 import { prisma } from "@/lib/server/prisma";
+import { checkRateLimit, getIp } from "@/lib/server/ratelimit";
 import { walletParamSchema } from "@/lib/server/validation";
 
 export const runtime = "nodejs";
@@ -10,7 +11,11 @@ type RouteContext = {
   params: Promise<{ walletAddress: string }>;
 };
 
-export async function GET(_: Request, context: RouteContext) {
+export async function GET(request: Request, context: RouteContext) {
+  if (!checkRateLimit(getIp(request), 20, 60_000)) {
+    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+  }
+
   try {
     const { walletAddress } = await context.params;
     const parsed = walletParamSchema.safeParse({ walletAddress });
@@ -27,7 +32,6 @@ export async function GET(_: Request, context: RouteContext) {
         walletAddress: true,
         nickname: true,
         contactType: true,
-        contactValueEncrypted: true,
         txHash: true,
         status: true,
         createdAt: true,
@@ -39,15 +43,13 @@ export async function GET(_: Request, context: RouteContext) {
       return NextResponse.json({ error: "Application not found" }, { status: 404 });
     }
 
-    const decrypted = decryptContact(application.contactValueEncrypted);
-
     return NextResponse.json(
       {
         application: {
           walletAddress: application.walletAddress,
           nickname: application.nickname,
           contactType: application.contactType,
-          contactValueMasked: maskContact(decrypted),
+          contactValueMasked: maskContact(""),
           txHash: application.txHash,
           status: application.status,
           createdAt: application.createdAt,
@@ -57,7 +59,7 @@ export async function GET(_: Request, context: RouteContext) {
       { status: 200 },
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown server error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("[GET /api/application/:walletAddress]", error);
+    return NextResponse.json({ error: "Failed to fetch application" }, { status: 500 });
   }
 }
