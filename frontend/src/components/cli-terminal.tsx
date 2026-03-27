@@ -29,7 +29,7 @@ type SavedApplication = {
   updatedAt: string;
 };
 
-const BASE_MENU_ITEMS = ["read manifesto", "apply for og hackathon", "attend ETHPrague 2026"] as const;
+const BASE_MENU_ITEMS = ["read manifesto", "apply for og hackathon", "attend ETHPrague 2026", "view contract", "view github"] as const;
 type BaseMenuItem = (typeof BASE_MENU_ITEMS)[number];
 type MenuItem = BaseMenuItem | "disconnect" | "view my application";
 
@@ -134,6 +134,8 @@ export function CliTerminal() {
     "read manifesto",
     hasApplied ? "view my application" : "apply for og hackathon",
     "attend ETHPrague 2026",
+    "view contract",
+    "view github",
     ...(isConnected ? (["disconnect"] as const) : []),
   ];
 
@@ -277,6 +279,18 @@ export function CliTerminal() {
       if (selected === "attend ETHPrague 2026") {
         appendLine("Opening ETHPrague...");
         window.open("https://ethprague.com/", "_blank", "noopener,noreferrer");
+        return;
+      }
+
+      if (selected === "view contract") {
+        appendLine("Viewing contract on Etherscan...");
+        window.open("https://etherscan.io/address/0xb51d799b94c3dc9119bc6ac072cfabe037126824#code", "_blank", "noopener,noreferrer");
+        return;
+      }
+
+      if (selected === "view github") {
+        appendLine("Viewing OG track GitHub...");
+        window.open("https://github.com/Duct-Tape-Events/og_track_ui", "_blank", "noopener,noreferrer");
         return;
       }
 
