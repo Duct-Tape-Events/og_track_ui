@@ -35,7 +35,7 @@ type MenuItem = BaseMenuItem | "disconnect" | "view my application";
 
 const MANIFESTO_LINES = [
   "╔══════════════════════════════════════╗",
-  "║        OGs aren't jaded!           ║",
+  "║        OGs aren't jaded!             ║",
   "╚══════════════════════════════════════╝",
   "",
   "  We came to build.",
@@ -45,10 +45,7 @@ const MANIFESTO_LINES = [
   "  We open source the hard parts.",
   "  We build with conviction, curiosity, and care.",
   "  Craft > clout. Signal > noise.",
-  "  We build for pride, not paydays.",
-  "  We don't chase trends, we outlast them.",
-  "  We stay optimistic; builders define the future.",
-  "  Future's built, not bought.",
+  "  Less manifestors, more shipping.",
   "",
 ];
 
