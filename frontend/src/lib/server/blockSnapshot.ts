@@ -5,8 +5,8 @@ import { publicClient as sepoliaClient, mainnetClient } from "@/lib/server/publi
 
 // Mainnet block whose state root is the contract's rootHash.
 // Any address with a non-zero ETH balance at this block can sign up.
-const BLOCK_NUMBER: bigint | null = process.env.MERKLE_MAINNET_BLOCK_NUMBER
-  ? BigInt(process.env.MERKLE_MAINNET_BLOCK_NUMBER)
+const BLOCK_NUMBER: bigint | null = process.env.MERKLE_BLOCK_NUMBER
+  ? BigInt(process.env.MERKLE_BLOCK_NUMBER)
   : null;
 
 export type ProofResult =
@@ -19,7 +19,7 @@ export type ProofResult =
  */
 export async function getProof(address: string): Promise<ProofResult> {
   if (!BLOCK_NUMBER) {
-    console.warn("[blockSnapshot] MERKLE_MAINNET_BLOCK_NUMBER not set — proof generation unavailable");
+    console.warn("[blockSnapshot] MERKLE_BLOCK_NUMBER not set — proof generation unavailable");
     return { eligible: false, proof: null };
   }
 

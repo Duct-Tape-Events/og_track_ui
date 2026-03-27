@@ -180,7 +180,7 @@ export function CliTerminal() {
 
     if (prevStep === "connectWallet") {
       setDraft((d) => ({ ...d, nickname: "" }));
-      appendLine("Connect a wallet that was active before block 6942067 (Dec 24th, 2018)? y/n");
+      appendLine(`Connect a wallet that was active before block ${process.env.NEXT_PUBLIC_MERKLE_BLOCK_NUMBER} (Dec 24th, 2018)? y/n`);
     } else if (prevStep === "nickname") {
       setDraft((d) => ({ ...d, contactType: null }));
       appendLines(["", "Enter a nickname:"]);
@@ -255,7 +255,7 @@ export function CliTerminal() {
           appendLines(["", "Enter a nickname:"]);
         } else {
           setFormStep("connectWallet");
-          appendLines(["", "Connect a wallet that was active before block 6942067 (Dec 24th, 2018)? y/n"]);
+          appendLines(["", `Connect a wallet that was active before block ${process.env.NEXT_PUBLIC_MERKLE_BLOCK_NUMBER} (Dec 24th, 2018)? y/n`]);
         }
         return;
       }
